@@ -1,0 +1,6 @@
+finanzas.db 
+token_telegram_bot.txt 
+migrar_a_turso.py 
+Procfile.txt 
+__pycache__/ 
+.env

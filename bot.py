@@ -1,7 +1,9 @@
 # bot.py
 import os
 import logging
+import threading
 from datetime import datetime, timedelta
+from http.server import HTTPServer, BaseHTTPRequestHandler
 import libsql_client
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
@@ -14,19 +16,39 @@ from telegram.ext import (
 )
 
 # ---------------------------------------------------------
-# ---------------------------------------------------------
 # CONFIGURACIÓN Y VARIABLES DE ENTORNO
 # ---------------------------------------------------------
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 ALLOWED_USER_ID = int(os.getenv("ALLOWED_USER_ID", "0"))
 TURSO_URL = os.getenv("TURSO_URL")
 TURSO_AUTH_TOKEN = os.getenv("TURSO_AUTH_TOKEN")
+PORT = int(os.getenv("PORT", "8080"))
 
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     level=logging.INFO
 )
 
+# ---------------------------------------------------------
+# SERVIDOR WEB PARA HEALTH CHECK (RENDER FREE TIER)
+# ---------------------------------------------------------
+class HealthCheckHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.send_header("Content-type", "text/plain; charset=utf-8")
+        self.end_headers()
+        self.wfile.write(b"Bot activo 24/7")
+
+    def log_message(self, format, *args):
+        pass  # Silencia peticiones HTTP para mantener limpia la consola
+
+def iniciar_servidor_web():
+    servidor = HTTPServer(("0.0.0.0", PORT), HealthCheckHandler)
+    servidor.serve_forever()
+
+# ---------------------------------------------------------
+# CONEXIÓN CON TURSO / LIBSQL
+# ---------------------------------------------------------
 def obtener_cliente_turso():
     url_limpia = TURSO_URL.strip().replace("libsql://", "https://").replace("wss://", "https://")
     return libsql_client.create_client_sync(
@@ -174,6 +196,10 @@ async def manejar_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data.pop("temp_gasto", None)
 
 def main():
+    # Arrancar micro-servidor HTTP en un hilo independiente para Render
+    hilo_web = threading.Thread(target=iniciar_servidor_web, daemon=True)
+    hilo_web.start()
+
     app = ApplicationBuilder().token(BOT_TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, manejar_mensaje_texto))

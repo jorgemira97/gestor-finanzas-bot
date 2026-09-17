@@ -34,7 +34,7 @@ class HealthCheckHandler(BaseHTTPRequestHandler):
         self.wfile.write(b"Bot 24/7 Activo y Saludable")
 
     def log_message(self, format, *args):
-        pass  # Silenciar pings periódicos para mantener limpia la consola
+        pass
 
 def run_http_server():
     server = HTTPServer(("0.0.0.0", PORT), HealthCheckHandler)
@@ -97,7 +97,7 @@ def init_db():
         if res_ingreso.rows[0][0] == 0:
             categorias_ingreso = [
                 ("Nómina", "💼", "ingreso", "fijo"),
-                ("Bizum / Transferencia", "📱", "ingreso", "variable"),
+                ("Transferencia", "📱", "ingreso", "variable"),
                 ("Inversiones", "📈", "ingreso", "variable"),
                 ("Otros Ingresos", "💰", "ingreso", "variable")
             ]
@@ -159,7 +159,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data.clear()
     await update.message.reply_text(
         "👋 **Gestor Financiero Personal Activo**\n\n"
-        "Puedes escribir un importe directamente (ej: `12.50 Supermercado`) o usar las opciones:",
+        "Puedes escribir un importe directamente (ej: `12.50 Supermercado` o `+1500 Nómina`) o usar las opciones:",
         reply_markup=teclado_acciones_base(),
         parse_mode="Markdown"
     )
@@ -215,21 +215,49 @@ async def manejar_texto(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("⚠️ Introduce un número válido (ej: `14.90`):")
         return
 
-    # Caso C: Ingesta rápida de transacción por texto tradicional
+    # Caso C: Importe tras haber seleccionado "➕ Añadir -> Gasto/Ingreso"
+    if modo == "esperando_importe_alta":
+        patron = r"^([+-]?\d+(?:[\.,]\d{1,2})?)\s*(.*)$"
+        match = re.match(patron, texto)
+        if match:
+            importe = float(match.group(1).replace(",", "."))
+            desc = match.group(2).strip()
+            tipo_elegido = context.user_data.get("tipo", "gasto")
+
+            context.user_data["importe"] = abs(importe)
+            context.user_data["desc"] = desc
+            context.user_data["modo"] = None  # Liberar modo
+
+            await update.message.reply_text(
+                f"Selecciona la categoría de **{tipo_elegido.upper()}** para **{abs(importe):.2f} €**:",
+                reply_markup=obtener_teclado_categorias(tipo_elegido),
+                parse_mode="Markdown"
+            )
+            return
+        else:
+            await update.message.reply_text("⚠️ Por favor, introduce un importe válido (ej: `25` o `1200 nómina`):")
+            return
+
+    # Caso D: Ingesta rápida directa sin pasar por el botón Añadir
     patron_rapido = r"^([+-]?\d+(?:[\.,]\d{1,2})?)\s*(.*)$"
     match = re.match(patron_rapido, texto)
     if match:
         context.user_data.clear()
-        importe = float(match.group(1).replace(",", "."))
+        raw_val = match.group(1).replace(",", ".")
+        importe = float(raw_val)
         desc = match.group(2).strip()
+
+        # Si empieza por '+' o la descripción contiene 'ingreso'/'nómina'/'nomina', clasificar como ingreso
+        es_ingreso = raw_val.startswith("+") or any(k in desc.lower() for k in ["ingreso", "nomina", "nómina", "bizum"])
+        tipo = "ingreso" if es_ingreso else "gasto"
 
         context.user_data["importe"] = abs(importe)
         context.user_data["desc"] = desc
-        context.user_data["tipo"] = "ingreso" if importe < 0 or "ingreso" in desc.lower() else "gasto"
+        context.user_data["tipo"] = tipo
 
         await update.message.reply_text(
-            f"Selecciona la categoría para **{abs(importe):.2f} €**:",
-            reply_markup=obtener_teclado_categorias(context.user_data["tipo"]),
+            f"Selecciona la categoría para **{abs(importe):.2f} €** ({tipo.upper()}):",
+            reply_markup=obtener_teclado_categorias(tipo),
             parse_mode="Markdown"
         )
     else:
@@ -264,7 +292,9 @@ async def manejar_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if data in ["alta_gasto", "alta_ingreso"]:
         context.user_data["tipo"] = "gasto" if data == "alta_gasto" else "ingreso"
-        await query.edit_message_text("Escribe el importe por el chat (ej: `15.50` o `25 supermercado`):")
+        context.user_data["modo"] = "esperando_importe_alta"
+        nombre_tipo = "GASTO" if data == "alta_gasto" else "INGRESO"
+        await query.edit_message_text(f"Indica el importe del **{nombre_tipo}** por el chat (ej: `15.50` o `1200 nómina`):", parse_mode="Markdown")
         return
 
     # 2. Selección de categoría tras definir importe o al cambiar de categoría
@@ -450,7 +480,6 @@ async def mostrar_movimientos_dia(target, context, fecha_str, via_callback=False
 def main():
     init_db()
 
-    # Micro-servidor en hilo secundario para mantener activo Render
     t = threading.Thread(target=run_http_server, daemon=True)
     t.start()
 

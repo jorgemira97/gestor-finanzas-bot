@@ -15,16 +15,25 @@ st.set_page_config(
 )
 
 # ---------------------------------------------------------
-# OBTENCIÓN DE SECRETOS (COMPATIBLE LOCAL Y CLOUD)
+# OBTENCIÓN DE SECRETOS (ARQUITECTURA FAIL-CLOSED)
 # ---------------------------------------------------------
-def get_secret(key, default=""):
+def get_secret(key):
+    """Recupera secretos sin valores por defecto inseguros."""
     if key in st.secrets:
         return st.secrets[key]
-    return os.getenv(key, default)
+    val = os.getenv(key)
+    return val if val else None
 
 TURSO_URL = get_secret("TURSO_URL")
 TURSO_AUTH_TOKEN = get_secret("TURSO_AUTH_TOKEN")
-DASHBOARD_PIN = str(get_secret("DASHBOARD_PIN", "6297"))
+RAW_PIN = get_secret("DASHBOARD_PIN")
+
+# Bloqueo preventivo inmediato si falta alguna credencial crítica
+if not TURSO_URL or not TURSO_AUTH_TOKEN or not RAW_PIN:
+    st.error("🚨 **Error de Configuración:** Faltan credenciales del sistema. Acceso revocado por seguridad.")
+    st.stop()
+
+DASHBOARD_PIN = str(RAW_PIN).strip()
 
 # ---------------------------------------------------------
 # CONTROL DE ACCESO (PIN DE SEGURIDAD)

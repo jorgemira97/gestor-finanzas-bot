@@ -389,6 +389,24 @@ with tab_anual:
     meses_con_datos = max(1, df_anio["fecha"].apply(lambda x: str(x)[:7]).nunique()) if not df_anio.empty else 1
     media_gasto_mensual = gastos_tot_a / meses_con_datos
 
+    # -----------------------------------------------------
+    # BARRA VISUAL DE CUMPLIMIENTO DEL OBJETIVO ANUAL
+    # -----------------------------------------------------
+    if meta_anual > 0:
+        pct_ahorro = (balance_a / meta_anual) * 100
+        progreso_normalizado = min(max(balance_a / meta_anual, 0.0), 1.0)
+        
+        col_bar, col_meta = st.columns([5, 1])
+        with col_bar:
+            if balance_a < 0:
+                texto_barra = f"🎯 Cumplimiento de Ahorro: **0.0%** (Déficit acumulado: {formato_eur(balance_a)})"
+            else:
+                texto_barra = f"🎯 Cumplimiento de Ahorro: **{pct_ahorro:.1f}%** ({formato_eur(balance_a)} conseguidos)"
+            st.progress(progreso_normalizado, text=texto_barra)
+        with col_meta:
+            st.metric("Meta Fijada", formato_eur(meta_anual))
+        st.write("")
+
     # Scorecards Anuales
     m1, m2, m3, m4, m5 = st.columns(5)
     m1.metric("💼 Ingresos Anuales", formato_eur(ingresos_a))
@@ -420,7 +438,6 @@ with tab_anual:
     if meta_anual > 0:
         st.markdown("#### 🧭 Proyección de Consecución de Meta")
         
-        # Determinar fecha base según la primera transacción registrada del año
         if not df_anio.empty:
             fecha_min_str = df_anio["fecha"].min()
             fecha_min = datetime.strptime(str(fecha_min_str)[:10], "%Y-%m-%d").date()

@@ -1,27 +1,35 @@
-## Declaración de Autoría, Diligencia y Uso de IA (Diligence Statement)
+## Declaración de Autoría, Diligencia y Uso de IA (Diligence Statement) — v2.1
 
 ### 1. Propósito y Contexto del Proyecto
-Este repositorio alberga un sistema integral de control financiero personal (v2.0) compuesto por tres capas desacopladas y diseñadas para operar con cero fricción:
-* **Capa de Persistencia:** Base de datos relacional distribuida en Turso (libSQL), estructurada con modelos relacionales para transacciones, categorización tipificada (gastos/ingresos con naturaleza fija/variable) y seguimiento de techos mensuales y metas anuales (`metas_mensuales` y `metas_anuales`).
-* **Capa de Ingesta y Gestión 24/7 (Telegram):** Bot alojado en Render (Web Service Free Tier) mantenido activo de forma continua mediante un micro-servidor HTTP interno y monitorización periódica (*keep-alive* con cron-job). Integra una interfaz táctil CRUD completa con botoneras interactivas (*inline keyboards*) para registrar ingresos y gastos clasificados, modificar importes o categorías, eliminar registros con confirmación de seguridad y seleccionar fechas retrospectivas («📅 Otra fecha»).
-* **Capa Analítica y Visualización (Dashboard):** Panel interactivo en Streamlit Community Cloud protegido mediante autenticación perimetral estricta (*fail-closed* sin valores por defecto públicos), cabecera simétrica con selector temporal directo, diagnóstico dinámico de *pacing*, límite diario de rescate y un motor de proyección anual libre de topes artificiales de calendario.
+Este repositorio alberga un sistema integral de control financiero personal diseñado bajo un paradigma de **soberanía de datos absoluta y coste cero** (v2.1). La arquitectura desacopla tres capas independientes:
+* **Capa de Persistencia:** Base de datos relacional distribuida en Turso (libSQL) con esquemas tipificados para transacciones, categorización fija/variable y seguimiento de techos mensuales y metas anuales (`metas_mensuales` y `metas_anuales`).
+* **Capa de Ingesta y Gestión Táctil (Telegram):** Bot alojado en Render (Web Service Free Tier) con microservidor HTTP keep-alive, interfaz CRUD táctil completa y selección de fechas retrospectivas.
+* **Capa Analítica y Visualización (Dashboard):** Panel interactivo en Streamlit Community Cloud protegido por autenticación perimetral estricta (*fail-closed* sin fallbacks públicos), cabecera simétrica y motor de proyección de ahorro anual en días operativos reales.
+* **Capa de Autoservicio e Incorporación Zero-Code (v2.1):** Automatización de infraestructura mediante Blueprint (`render.yaml`) y manual de despliegue paso a paso (`GUIA_DESPLIEGUE.md`) para permitir a usuarios no técnicos desplegar y gestionar su propia instancia privada sin tocar terminales ni código fuente.
 
-El proyecto fue concebido y ejecutado con el doble propósito de gestionar de forma autónoma la economía individual y afianzar competencias prácticas en la dirección y supervisión de desarrollo de software multi-paso en colaboración Humano-IA.
+El proyecto persigue un doble fin: resolver la gestión económica individual con máxima ergonomía y servir como caso de estudio riguroso de desarrollo multi-paso mediante colaboración Humano-IA.
 
 ### 2. Matriz de Delegación y Roles (Humano vs. IA)
-El desarrollo y la evolución hacia la versión 2.0 se articularon bajo el siguiente reparto de funciones:
+El diseño, refactorización y documentación del sistema se articularon bajo el siguiente marco de gobernanza:
 
 | Dimensión | Aporte y Supervisión Humana | Rol del Copiloto IA (Gemini) |
 | :--- | :--- | :--- |
-| **Arquitectura y Negocio** | Definición de flujos CRUD, reglas de *pacing*, criterio de cálculo proyectivo sobre días operativos reales y decisión de diseño táctil frente a interfaces textuales propensas a errores. | Propuesta de patrones estructurales, diseño de máquinas de estado para Telegram y scaffolding modular de scripts (`bot.py` y `app.py`). |
-| **Seguridad Perimetral** | Auditoría y detección de la vulnerabilidad de fallback público del PIN en repositorios abiertos; custodia, rotación manual y gestión aislada de credenciales. | Implementación de la política *fail-closed*, refactorización de lecturas de entorno sin valores por defecto e interrupción controlada de ejecución (`st.stop()`). |
-| **Infraestructura y DevOps** | Gestión de cuentas y despliegues en GitHub, Turso, Render y Streamlit Cloud; resolución de ramas y rebases de Git. | Scaffolding de micro-servidor HTTP para Render, scripts de siembra (*seeding*) de base de datos y optimización de dependencias. |
-| **Control de Calidad** | Doble verificación empírica de balances, validación de persistencia de transacciones en Turso y auditoría de exactitud temporal en proyecciones plurianuales. | Implementación de consultas parametrizadas en libSQL, cálculo matemático de *run-rate* y renderizado dinámico en Pandas y Streamlit. |
+| **Estrategia y Negocio** | Definición de flujos CRUD táctiles, criterios de *pacing*, reglas de proyección y decisión de arquitectura descentralizada (*deploy-your-own*) frente al riesgo de custodia multi-inquilino. | Propuesta de patrones de diseño, máquinas de estado para Telegram y modelado matemático de run-rate en días operativos reales. |
+| **Seguridad Perimetral** | Auditoría y detección de la vulnerabilidad de fallback del PIN en repositorios públicos; custodia y rotación manual de secretos. | Implementación del patrón de autenticación *fail-closed*, interrupción controlada de ejecución (`st.stop()`) y consultas parametrizadas contra inyección SQL. |
+| **DevOps y Automatización** | Creación y administración de cuentas cloud; resolución manual de bifurcaciones y rebases de Git. | Configuración de Blueprints (`render.yaml`), scaffolding de micro-servidor HTTP para Render y adaptación de dependencias en `requirements.txt`. |
+| **Documentación y UX** | Validación del tono, empatía con usuarios no técnicos y revisión del orden lógico del proceso de onboarding. | Estructuración pedagógica de `GUIA_DESPLIEGUE.md`, metáfora de la "Libreta de Claves" y redacción de protocolos de contingencia (*troubleshooting*). |
 
-### 3. Privacidad, Seguridad y Gestión de Credenciales
-* **Aislamiento Criptográfico y Fail-Closed:** El sistema implementa una política de fallo seguro: si variables críticas como `DASHBOARD_PIN`, `TURSO_URL` o `TURSO_AUTH_TOKEN` no están explícitamente definidas en el entorno o en el almacén de secretos, la aplicación revoca el acceso de inmediato sin exponer fallbacks predeterminados.
-* **Protección de Datos Sensibles:** Ninguna transacción financiera, saldo real ni credencial privada fue expuesta en el historial público de Git ni procesada por el modelo de lenguaje. Los secretos se gestionan mediante exclusión en `.gitignore`, variables de entorno en Render y el sistema cifrado de Streamlit Secrets.
-* **Validación de Identidad:** La interacción con el bot de Telegram está restringida exclusivamente al identificador numérico único del titular (`ALLOWED_USER_ID`), descartando cualquier petición ajena.
+### 3. Privacidad, Soberanía Distribuida y Gestión de Credenciales
+* **Modelo "Deploy-Your-Own" (Sin Custodia Central):** Para preservar la privacidad financiera, la plataforma rechaza intencionadamente el modelo SaaS multiusuario centralizado. Cada usuario final despliega su propia base de datos en Turso y sus propios servicios cloud, garantizando que el autor de este repositorio **nunca tiene acceso, visibilidad ni custodia** sobre saldos o transacciones ajenas.
+* **Aislamiento Criptográfico y Fail-Closed:** El sistema revoca de inmediato la ejecución si faltan variables críticas de entorno (`DASHBOARD_PIN`, `TURSO_URL`, `TURSO_AUTH_TOKEN`, `BOT_TOKEN`, `ALLOWED_USER_ID`), imposibilitando el acceso con credenciales genéricas por defecto.
+* **Ofuscación de Datos:** Ningún registro bancario, importe personal ni clave privada fue procesado por modelos de lenguaje comercial ni almacenado en el historial de Git.
 
 ### 4. Metodología de Verificación y Asunción de Responsabilidad
-Cada componente, cálculo y flujo operativo (desde la ingesta táctil y las correcciones de registros en Telegram hasta las métricas de rescate y la proyección de metas anuales) fue auditado y verificado manualmente en entorno local y de producción antes de su validación final. El titular asume la autoría intelectual, el mantenimiento técnico continuo y la responsabilidad legal y operativa íntegra sobre el uso del software y la veracidad de los datos.
+* **Auditoría Técnica:** Cada script (`bot.py`, `app.py`, `render.yaml`) fue ejecutado, testeado y verificado en entornos de desarrollo y producción bajo supervisión humana continua antes de su consolidación en la rama principal.
+* **Titularidad del Código:** El autor mantiene la autoría intelectual de la configuración del sistema, asumiendo la supervisión directa sobre cada propuesta algorítmica generada por la IA.
+
+### 5. Exención de Responsabilidad y Términos de Uso
+El software y la documentación contenidos en este repositorio se comparten exclusivamente con fines educativos, de divulgación tecnológica y de uso personal bajo la modalidad **"tal cual" (*as-is*)**, sin garantías de ningún tipo:
+* **Sin Asesoramiento Financiero:** Las herramientas de cálculo, métricas de *pacing*, límites de gasto y proyecciones de ahorro son meras estimaciones estadísticas automatizadas y no constituyen recomendación de inversión, asesoría financiera, contable ni legal.
+* **Sin Compromiso de Soporte:** El autor no adquiere obligación alguna de mantenimiento continuo, resolución de incidencias, disponibilidad de servicio ni asistencia técnica 24/7 respecto a las instancias independientes desplegadas por terceros.
+* **Responsabilidad Individual:** Cada usuario es el único y exclusivo responsable de la seguridad de sus credenciales, de las copias de seguridad de sus datos en Turso y del control del gasto en las plataformas cloud utilizadas.

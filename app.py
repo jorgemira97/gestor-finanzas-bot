@@ -3,7 +3,7 @@ import calendar
 import pandas as pd
 import streamlit as st
 import libsql_client
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 
 # ---------------------------------------------------------
 # CONFIGURACIÓN DE PÁGINA
@@ -28,7 +28,6 @@ TURSO_URL = get_secret("TURSO_URL")
 TURSO_AUTH_TOKEN = get_secret("TURSO_AUTH_TOKEN")
 RAW_PIN = get_secret("DASHBOARD_PIN")
 
-# Bloqueo preventivo inmediato si falta alguna credencial crítica
 if not TURSO_URL or not TURSO_AUTH_TOKEN or not RAW_PIN:
     st.error("🚨 **Error de Configuración:** Faltan credenciales del sistema. Acceso revocado por seguridad.")
     st.stop()
@@ -85,7 +84,6 @@ def consultar_df(query, params=None):
 def cargar_metas_mes(mes_anio):
     cliente = obtener_cliente_turso()
     try:
-        # Asegurar existencia de la tabla en Turso
         cliente.execute("""
             CREATE TABLE IF NOT EXISTS metas_mensuales (
                 mes_anio TEXT PRIMARY KEY,
@@ -136,6 +134,45 @@ def guardar_metas_mes(mes_anio, techo_fijo, techo_var, obj_ahorro):
     finally:
         cliente.close()
 
+def cargar_meta_anual(anio_str):
+    cliente = obtener_cliente_turso()
+    try:
+        cliente.execute("""
+            CREATE TABLE IF NOT EXISTS metas_anuales (
+                anio TEXT PRIMARY KEY,
+                objetivo_ahorro REAL DEFAULT 0,
+                actualizado_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+        """)
+        res = cliente.execute("SELECT objetivo_ahorro FROM metas_anuales WHERE anio = ?;", [str(anio_str)])
+        if res.rows:
+            return float(res.rows[0][0] or 0.0)
+        return 0.0
+    except Exception:
+        return 0.0
+    finally:
+        cliente.close()
+
+def guardar_meta_anual(anio_str, obj_ahorro):
+    cliente = obtener_cliente_turso()
+    try:
+        cliente.execute("""
+            CREATE TABLE IF NOT EXISTS metas_anuales (
+                anio TEXT PRIMARY KEY,
+                objetivo_ahorro REAL DEFAULT 0,
+                actualizado_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+        """)
+        cliente.execute("""
+            INSERT INTO metas_anuales (anio, objetivo_ahorro)
+            VALUES (?, ?)
+            ON CONFLICT(anio) DO UPDATE SET
+                objetivo_ahorro = excluded.objetivo_ahorro,
+                actualizado_en = CURRENT_TIMESTAMP;
+        """, [str(anio_str), float(obj_ahorro)])
+    finally:
+        cliente.close()
+
 def cargar_datos_mes(mes_anio):
     query = """
         SELECT 
@@ -168,35 +205,38 @@ def cargar_datos_anio(anio_str):
     return consultar_df(query, [anio_str])
 
 # ---------------------------------------------------------
-# BARRA LATERAL (CONFIGURACIÓN TEMPORAL Y METAS)
+# GESTIÓN DEL ESTADO TEMPORAL
 # ---------------------------------------------------------
-st.sidebar.header("⚙️ Configuración Temporal")
 hoy = datetime.now()
 mes_actual_str = hoy.strftime("%Y-%m")
 
-# Detección dinámica de meses con datos
 df_meses_db = consultar_df("SELECT DISTINCT strftime('%Y-%m', fecha) AS mes FROM transacciones WHERE fecha IS NOT NULL ORDER BY mes DESC;")
 lista_meses = [m for m in df_meses_db["mes"].dropna().tolist() if m]
 if mes_actual_str not in lista_meses:
     lista_meses.insert(0, mes_actual_str)
 
-mes_seleccionado = st.sidebar.selectbox(
-    "Mes operativo (AAAA-MM):",
-    options=lista_meses,
-    index=lista_meses.index(mes_actual_str) if mes_actual_str in lista_meses else 0
-)
+if "mes_operativo" not in st.session_state:
+    st.session_state.mes_operativo = lista_meses[0]
+elif st.session_state.mes_operativo not in lista_meses:
+    st.session_state.mes_operativo = lista_meses[0]
+
+mes_seleccionado = st.session_state.mes_operativo
 anio_seleccionado = mes_seleccionado.split("-")[0]
 
+# ---------------------------------------------------------
+# BARRA LATERAL (TECHOS DEL MES SELECCIONADO)
+# ---------------------------------------------------------
+st.sidebar.header("⚙️ Configuración de Techos")
 metas = cargar_metas_mes(mes_seleccionado)
 
-st.sidebar.subheader("🎯 Techos del Mes (€)")
+st.sidebar.subheader(f"🎯 Techos de {mes_seleccionado} (€)")
 nuevo_techo_fijo = st.sidebar.number_input("Techo Fijo (€):", min_value=0.0, value=float(metas["techo_fijo"]), step=50.0)
 nuevo_techo_var = st.sidebar.number_input("Techo Variable (€):", min_value=0.0, value=float(metas["techo_variable"]), step=50.0)
 nuevo_obj_ahorro = st.sidebar.number_input("Objetivo Ahorro (€):", min_value=0.0, value=float(metas["objetivo_ahorro"]), step=50.0)
 
-if st.sidebar.button("💾 Guardar Metas", use_container_width=True):
+if st.sidebar.button("💾 Guardar Techos del Mes", use_container_width=True):
     guardar_metas_mes(mes_seleccionado, nuevo_techo_fijo, nuevo_techo_var, nuevo_obj_ahorro)
-    st.sidebar.success("¡Metas guardadas en Turso!")
+    st.sidebar.success("¡Techos actualizados en Turso!")
     st.rerun()
 
 st.sidebar.markdown("---")
@@ -213,7 +253,19 @@ tab_mensual, tab_anual = st.tabs(["📅 Control Mensual Operativo", "📈 Visió
 # PESTAÑA 1: CONTROL MENSUAL
 # =========================================================
 with tab_mensual:
-    st.title(f"📊 Panel Operativo — {mes_seleccionado}")
+    col_m1, col_m2 = st.columns([3, 1])
+    with col_m1:
+        st.title(f"📊 Panel Operativo — {mes_seleccionado}")
+    with col_m2:
+        mes_elegido = st.selectbox(
+            "📅 Mes:",
+            options=lista_meses,
+            index=lista_meses.index(mes_seleccionado),
+            key="sb_mes_cabecera"
+        )
+        if mes_elegido != st.session_state.mes_operativo:
+            st.session_state.mes_operativo = mes_elegido
+            st.rerun()
     
     df_mes = cargar_datos_mes(mes_seleccionado)
     
@@ -224,7 +276,7 @@ with tab_mensual:
     balance_m = ingresos_m - gastos_m
     tasa_ahorro_m = (balance_m / ingresos_m * 100) if ingresos_m > 0 else 0.0
 
-    # Scorecards
+    # Scorecards Mensuales
     c1, c2, c3, c4, c5 = st.columns(5)
     c1.metric("💼 Ingresos", formato_eur(ingresos_m))
     c2.metric("🏠 Gastos Fijos", formato_eur(fijos_m), delta=f"Techo: {metas['techo_fijo']:,.0f} €" if metas['techo_fijo'] > 0 else None, delta_color="inverse")
@@ -259,15 +311,9 @@ with tab_mensual:
     with r1:
         if techo_v > 0:
             if diferencia_var >= 0:
-                st.info(
-                    f"📅 **Días restantes:** {dias_rest} de {dias_tot_m}\n\n"
-                    f"Margen en techo variable: **{formato_eur(diferencia_var)}**"
-                )
+                st.info(f"📅 **Días restantes:** {dias_rest} de {dias_tot_m}\n\nMargen en techo variable: **{formato_eur(diferencia_var)}**")
             else:
-                st.warning(
-                    f"📅 **Días restantes:** {dias_rest} de {dias_tot_m}\n\n"
-                    f"⚠️ **Techo variable agotado:** Rebasado por **{formato_eur(abs(diferencia_var))}**."
-                )
+                st.warning(f"📅 **Días restantes:** {dias_rest} de {dias_tot_m}\n\n⚠️ **Techo variable agotado:** Rebasado por **{formato_eur(abs(diferencia_var))}**.")
         else:
             st.info(f"📅 **Días restantes:** {dias_rest} de {dias_tot_m}")
 
@@ -294,7 +340,6 @@ with tab_mensual:
 
     st.divider()
 
-    # Gráfico de categorías y Tabla
     col_g, col_t = st.columns([1, 1])
     with col_g:
         st.subheader("📊 Gastos por Categoría")
@@ -330,7 +375,9 @@ with tab_anual:
     with col_t2:
         anio_elegido = st.selectbox("📅 Año:", options=lista_anios, index=0)
 
+    # Cargar datos y meta anual
     df_anio = cargar_datos_anio(anio_elegido)
+    meta_anual = cargar_meta_anual(anio_elegido)
     
     ingresos_a = df_anio[df_anio["tipo"] == "ingreso"]["importe"].sum() if not df_anio.empty else 0.0
     gastos_fijos_a = df_anio[(df_anio["tipo"] == "gasto") & (df_anio["naturaleza"] == "fijo")]["importe"].sum() if not df_anio.empty else 0.0
@@ -347,12 +394,68 @@ with tab_anual:
     m1.metric("💼 Ingresos Anuales", formato_eur(ingresos_a))
     m2.metric("🏠 Gasto Fijo Acumulado", formato_eur(gastos_fijos_a))
     m3.metric("🍽️ Gasto Variable Acumulado", formato_eur(gastos_var_a))
-    m4.metric("💰 Ahorro Neto Anual", formato_eur(balance_a))
+    m4.metric("💰 Ahorro Neto Anual", formato_eur(balance_a), delta=f"Meta: {meta_anual:,.0f} €" if meta_anual > 0 else None)
     m5.metric("📊 Gasto Medio / Mes", formato_eur(media_gasto_mensual))
+
+    # Configuración de la Meta Anual (Expander)
+    with st.expander("🎯 Configuración de Meta Anual"):
+        col_em1, col_em2 = st.columns([3, 1])
+        with col_em1:
+            nuevo_obj_anual = st.number_input(
+                f"Objetivo de Ahorro para el año {anio_elegido} (€):",
+                min_value=0.0,
+                value=float(meta_anual),
+                step=100.0,
+                key=f"input_meta_anual_{anio_elegido}"
+            )
+        with col_em2:
+            st.write("")
+            st.write("")
+            if st.button("💾 Guardar Meta Anual", use_container_width=True):
+                guardar_meta_anual(anio_elegido, nuevo_obj_anual)
+                st.success("¡Meta anual actualizada en Turso!")
+                st.rerun()
+
+    # Panel de Diagnóstico y Proyección Anual
+    if meta_anual > 0:
+        st.markdown("#### 🧭 Proyección de Consecución de Meta")
+        
+        # Determinar fecha base según la primera transacción registrada del año
+        if not df_anio.empty:
+            fecha_min_str = df_anio["fecha"].min()
+            fecha_min = datetime.strptime(str(fecha_min_str)[:10], "%Y-%m-%d").date()
+        else:
+            fecha_min = hoy.date()
+
+        fecha_ref = hoy.date() if str(hoy.year) == str(anio_elegido) else date(int(anio_elegido), 12, 31)
+        dias_operativos = max(1, (fecha_ref - fecha_min).days + 1)
+
+        if balance_a >= meta_anual:
+            st.success(f"🎉 **¡Objetivo Cumplido!** Has superado el objetivo anual de {formato_eur(meta_anual)} (Superávit: {formato_eur(balance_a - meta_anual)}).")
+        elif balance_a <= 0:
+            st.error("🚨 **Ritmo deficitario o nulo:** Imposible proyectar fecha de consecución sin superávit acumulado.")
+        else:
+            ritmo_diario = balance_a / dias_operativos
+            ahorro_restante = meta_anual - balance_a
+            dias_necesarios = int(ahorro_restante / ritmo_diario)
+            fecha_proyectada = fecha_ref + timedelta(days=dias_necesarios)
+
+            meses_es = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"]
+            f_texto = f"{fecha_proyectada.day} de {meses_es[fecha_proyectada.month - 1]} de {fecha_proyectada.year}"
+
+            p1, p2, p3 = st.columns(3)
+            p1.metric("⚡ Ritmo de Ahorro", f"{formato_eur(ritmo_diario)} / día", help=f"Basado en {dias_operativos} días operativos reales en {anio_elegido}.")
+            p2.metric("🎯 Margen Faltante", formato_eur(ahorro_restante))
+            p3.metric("📅 Fecha Proyectada", f"{fecha_proyectada.strftime('%d/%m/%Y')}")
+
+            if fecha_proyectada.year == int(anio_elegido):
+                st.info(f"🚀 Al ritmo actual, alcanzarás la meta dentro de este año el **{f_texto}** (en aprox. {dias_necesarios} días).")
+            else:
+                st.warning(f"⏳ Al ritmo actual, la meta se alcanzará en el siguiente ciclo: el **{f_texto}** (en aprox. {dias_necesarios} días).")
 
     st.divider()
 
-    # Gráfico evolutivo del gasto
+    # Gráficos evolutivos
     st.subheader("📉 Evolución Temporal del Gasto")
     selector_periodo = st.radio(
         "Escala temporal del gasto:",
@@ -391,7 +494,6 @@ with tab_anual:
 
     st.divider()
 
-    # Gráfico evolutivo del ahorro
     st.subheader("💰 Evolución del Ahorro Anual")
     meses_completos = [f"{anio_elegido}-{m:02d}" for m in range(1, 13)]
     
